@@ -1,0 +1,18 @@
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --text: #1a202c;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
