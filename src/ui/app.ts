@@ -2,6 +2,8 @@ import type { Country } from '../api/types.js';
 import { createSearchController, type SearchState } from '../search/searchController.js';
 import { createCountryCard, createCountryDetailsModal } from './countryView.js';
 import { createElement } from './dom.js';
+import { createCachedCountrySearch } from '../api/cachedSearch.js';
+import { createSearchHistory } from '../search/searchHistory.js';
 
 export function initApp(root: HTMLElement): void {
   const input = createElement('input', {
@@ -14,11 +16,15 @@ export function initApp(root: HTMLElement): void {
     },
   });
 
+  const history = createSearchHistory();
+  const historyContainer = createElement('div', { className: 'history-list' });
+
   const header = createElement(
     'header',
     { className: 'app-header' },
     createElement('h1', { className: 'app-title', textContent: 'Поиск стран' }),
     input,
+    historyContainer,
   );
 
   const resultsContainer = createElement('main', {
@@ -42,8 +48,36 @@ export function initApp(root: HTMLElement): void {
   };
 
   const openCountryDetails = (country: Country): void => {
+    if (input.value.trim()) {
+      history.add(input.value);
+      renderHistory();
+    }
     const modal = createCountryDetailsModal(country, closeModal);
     modalContainer.replaceChildren(modal);
+  };
+
+  const renderHistory = (): void => {
+    const items = history.getAll();
+    if (items.length === 0) {
+      historyContainer.replaceChildren();
+      return;
+    }
+
+    historyContainer.replaceChildren(
+      createElement('span', { className: 'history-label', textContent: 'История:' }),
+      ...items.map((item) => {
+        const chip = createElement('button', {
+          className: 'history-chip',
+          textContent: item,
+          attributes: { type: 'button' },
+        });
+        chip.addEventListener('click', () => {
+          input.value = item;
+          controller.searchImmediate(item);
+        });
+        return chip;
+      }),
+    );
   };
 
   const renderState = (state: SearchState): void => {
@@ -101,9 +135,21 @@ export function initApp(root: HTMLElement): void {
     }
   };
 
-  const controller = createSearchController(renderState);
+  const controller = createSearchController(renderState, {
+    searchFn: createCachedCountrySearch(),
+  });
 
   input.addEventListener('input', () => {
     controller.search(input.value);
   });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && input.value.trim()) {
+      history.add(input.value);
+      renderHistory();
+      controller.searchImmediate(input.value);
+    }
+  });
+
+  renderHistory();
 }

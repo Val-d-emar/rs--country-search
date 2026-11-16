@@ -2,6 +2,7 @@ import { searchCountries } from '../api/countries.js';
 import type { Country } from '../api/types.js';
 import { debounce } from '../utils/debounce.js';
 import { classifyError, type ClassifiedError } from './classifyError.js';
+import type { CountrySearchFn } from '../api/cachedSearch.js';
 
 export type SearchState =
   | { status: 'idle' }
@@ -13,11 +14,13 @@ export type SearchState =
 export interface SearchControllerOptions {
   debounceMs?: number;
   timeoutMs?: number;
+  searchFn?: CountrySearchFn;
 }
 
 export interface SearchController {
   search: (rawQuery: string) => void;
   retry: () => void;
+  searchImmediate: (rawQuery: string) => void;
 }
 
 function formatErrorMessage(error: Exclude<ClassifiedError, { kind: 'abort' }>): string {
@@ -41,6 +44,7 @@ export function createSearchController(
 ): SearchController {
   const debounceMs = options.debounceMs ?? 300;
   const timeoutMs = options.timeoutMs;
+  const searchFn = options.searchFn ?? searchCountries;
 
   let currentAbortController: AbortController | null = null;
   let lastQuery = '';
@@ -63,7 +67,7 @@ export function createSearchController(
 
     void (async () => {
       try {
-        const countries = await searchCountries(query, abortController.signal, timeoutMs);
+        const countries = await searchFn(query, abortController.signal, timeoutMs);
 
         if (abortController.signal.aborted) {
           return;
@@ -120,6 +124,20 @@ export function createSearchController(
       abortCurrentRequest();
       onStateChange({ status: 'loading', query: lastQuery });
       executeSearch(lastQuery);
+    },
+
+    searchImmediate(rawQuery: string): void {
+      const query = rawQuery.trim();
+      lastQuery = query;
+      abortCurrentRequest();
+
+      if (query === '') {
+        onStateChange({ status: 'idle' });
+        return;
+      }
+
+      onStateChange({ status: 'loading', query });
+      executeSearch(query);
     },
   };
 }

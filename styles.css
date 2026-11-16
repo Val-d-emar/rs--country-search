@@ -269,3 +269,34 @@ body {
   border: 1px solid var(--border);
   border-radius: 999px;
 }
+
+.history-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.history-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.history-chip {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  color: var(--text);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.history-chip:hover {
+  border-color: var(--primary);
+  background-color: var(--empty-bg);
+}
