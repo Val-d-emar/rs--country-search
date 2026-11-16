@@ -89,4 +89,23 @@ describe('createCachedCountrySearch', () => {
     resolveRequest([spain]);
     await expect(promiseB).resolves.toEqual([spain]);
   });
+
+  it('реально отменяет сетевой запрос, если отменился единственный подписчик', async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const baseSearch = vi.fn<CountrySearchFn>((_q, signal) => {
+      receivedSignal = signal;
+      return new Promise<Country[]>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason));
+      });
+    });
+
+    const cachedSearch = createCachedCountrySearch(baseSearch);
+    const controller = new AbortController();
+
+    const promise = cachedSearch('spain', controller.signal);
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(receivedSignal?.aborted).toBe(true);
+  });
 });
