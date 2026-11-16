@@ -1,57 +1,69 @@
 import { searchCountries } from './countries.js';
 /**
- * Оборачивает общий промис так, чтобы конкретный вызывающий мог отменить
- * ожидание по своему `signal`, не прерывая общий сетевой запрос для остальных.
- */
-function raceWithAbort(promise, signal) {
-    if (!signal) {
-        return promise;
-    }
-    if (signal.aborted) {
-        return Promise.reject(signal.reason);
-    }
-    return new Promise((resolve, reject) => {
-        const onAbort = () => {
-            reject(signal.reason);
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-        promise.then((value) => {
-            signal.removeEventListener('abort', onAbort);
-            resolve(value);
-        }, (error) => {
-            signal.removeEventListener('abort', onAbort);
-            reject(error);
-        });
-    });
-}
-/**
  * Создаёт обёртку над поиском стран с кэшем по строке запроса
  * и дедупликацией одновременных одинаковых запросов («в полёте»).
  */
 export function createCachedCountrySearch(baseSearch = searchCountries) {
     const cache = new Map();
     const inFlight = new Map();
-    return async (query, signal, timeoutMs) => {
+    return (query, signal, timeoutMs) => {
         if (signal?.aborted) {
             return Promise.reject(signal.reason);
         }
         const key = query.trim().toLowerCase();
         const cached = cache.get(key);
         if (cached !== undefined) {
-            return cached;
+            return Promise.resolve(cached);
         }
-        let sharedPromise = inFlight.get(key);
-        if (!sharedPromise) {
-            sharedPromise = baseSearch(query.trim(), undefined, timeoutMs)
+        let entry = inFlight.get(key);
+        if (!entry) {
+            const controller = new AbortController();
+            const currentEntry = {
+                controller,
+                subscribers: 0,
+                promise: Promise.resolve([]),
+            };
+            currentEntry.promise = baseSearch(query.trim(), controller.signal, timeoutMs)
                 .then((countries) => {
                 cache.set(key, countries);
                 return countries;
             })
                 .finally(() => {
-                inFlight.delete(key);
+                if (inFlight.get(key) === currentEntry) {
+                    inFlight.delete(key);
+                }
             });
-            inFlight.set(key, sharedPromise);
+            inFlight.set(key, currentEntry);
+            entry = currentEntry;
         }
-        return raceWithAbort(sharedPromise, signal);
+        const activeEntry = entry;
+        activeEntry.subscribers += 1;
+        if (!signal) {
+            return activeEntry.promise.finally(() => {
+                activeEntry.subscribers -= 1;
+            });
+        }
+        return new Promise((resolve, reject) => {
+            const onAbort = () => {
+                activeEntry.subscribers -= 1;
+                if (activeEntry.subscribers === 0) {
+                    if (inFlight.get(key) === activeEntry) {
+                        inFlight.delete(key);
+                    }
+                    activeEntry.controller.abort(signal.reason);
+                }
+                reject(signal.reason);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            activeEntry.promise.then((value) => {
+                signal.removeEventListener('abort', onAbort);
+                activeEntry.subscribers -= 1;
+                resolve(value);
+            }, (error) => {
+                signal.removeEventListener('abort', onAbort);
+                activeEntry.subscribers -= 1;
+                reject(error);
+            });
+        });
     };
 }
